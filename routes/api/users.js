@@ -3,9 +3,27 @@ const Joi = require("joi");
 const bcrypt = require("bcrypt");
 const router = express.Router();
 const { HttpError } = require("../../helpers/index");
-
+const gravatar = require("gravatar");
 const { User } = require("../../db/usersSchema");
 const { generateToken, verifyToken, passportAuthenticate } = require("./auth");
+const path = require("path");
+const fs = require("fs/promises");
+const multer = require("multer");
+const Jimp = require("jimp");
+
+const tempDir = path.join(__dirname, "../", "../", "temp");
+const avatarsDir = path.join(__dirname, "../", "../", "public", "avatars");
+
+const multerConfig = multer.diskStorage({
+  destination: tempDir,
+  filename: (req, file, cb) => {
+    cb(null, file.originalname);
+  },
+});
+
+const upload = multer({
+  storage: multerConfig,
+});
 
 const validateUser = (data) => {
   const schema = Joi.object({
@@ -36,9 +54,13 @@ router.post("/register", async (req, res, next) => {
     if (existingUser) {
       throw HttpError(409, "Email in use");
     }
-
+    const avatarURL = gravatar.url(email, { protocol: "https", s: "100" });
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ email, password: hashedPassword });
+    const user = await User.create({
+      email,
+      password: hashedPassword,
+      avatarURL,
+    });
     const token = generateToken(user);
 
     res.status(201).json({
@@ -46,6 +68,7 @@ router.post("/register", async (req, res, next) => {
       user: {
         email: user.email,
         subscription: "starter",
+        avatarURL,
       },
     });
   } catch (error) {
@@ -77,6 +100,7 @@ router.post("/login", async (req, res, next) => {
       user: {
         email: user.email,
         subscription: "starter",
+        avatarURL: user.avatarURL,
       },
     });
   } catch (error) {
@@ -106,14 +130,19 @@ router.post("/logout", async (req, res, next) => {
 router.get("/current", passportAuthenticate, async (req, res, next) => {
   try {
     const user = req.user;
+    const token = req.headers.authorization.split(" ")[1];
 
     if (!user) {
       throw HttpError(401, "Token is invalid");
     }
 
     res.status(200).json({
-      email: user.email,
-      subscription: user.subscription,
+      token: token,
+      user: {
+        email: user.email,
+        subscription: user.subscription,
+        avatarURL: user.avatarURL,
+      },
     });
   } catch (error) {
     next(error);
@@ -147,11 +176,59 @@ router.patch("/", passportAuthenticate, async (req, res, next) => {
       data: {
         email: user.email,
         subscription: user.subscription,
+        avatarURL: user.avatarURL,
       },
     });
   } catch (error) {
     next(error);
   }
 });
+
+// PATCH /users/avatars
+router.patch(
+  "/avatars",
+  passportAuthenticate,
+  upload.single("avatar"),
+  async (req, res, next) => {
+    try {
+      const userId = req.user._id;
+
+      const { path: tempUpload, originalname } = req.file;
+      const uniqueFilename = `${userId}-${Date.now()}${path.extname(
+        originalname
+      )}`;
+      const resultUpload = path.join(avatarsDir, uniqueFilename);
+      const jimpImage = await Jimp.read(tempUpload);
+      jimpImage.resize(250, 250);
+
+      await jimpImage.writeAsync(resultUpload);
+
+      const avatarURL = `/avatars/${uniqueFilename}`;
+      await fs.unlink(tempUpload);
+
+      const user = await User.findByIdAndUpdate(
+        userId,
+        { avatarURL },
+        { new: true }
+      );
+
+      if (!user) {
+        throw HttpError(404, "User not found");
+      }
+
+      res.json({
+        status: "success",
+        code: 200,
+        data: {
+          email: user.email,
+          subscription: user.subscription,
+          avatarURL: user.avatarURL,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 module.exports = router;
