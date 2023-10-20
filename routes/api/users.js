@@ -9,9 +9,10 @@ const { generateToken, verifyToken, passportAuthenticate } = require("./auth");
 const path = require("path");
 const fs = require("fs/promises");
 const multer = require("multer");
+const Jimp = require("jimp");
 
 const tempDir = path.join(__dirname, "../", "../", "temp");
-const avatrsDir = path.join(__dirname, "../", "../", "public", "avatars");
+const avatarsDir = path.join(__dirname, "../", "../", "public", "avatars");
 
 const multerConfig = multer.diskStorage({
   destination: tempDir,
@@ -193,10 +194,17 @@ router.patch(
       const userId = req.user._id;
 
       const { path: tempUpload, originalname } = req.file;
-      const resultUpload = path.join(avatrsDir, originalname);
-      await fs.rename(tempUpload, resultUpload);
+      const uniqueFilename = `${userId}-${Date.now()}${path.extname(
+        originalname
+      )}`;
+      const resultUpload = path.join(avatarsDir, uniqueFilename);
+      const jimpImage = await Jimp.read(tempUpload);
+      jimpImage.resize(250, 250);
 
-      const avatarURL = path.join("avatars", originalname);
+      await jimpImage.writeAsync(resultUpload);
+
+      const avatarURL = `/avatars/${uniqueFilename}`;
+      await fs.unlink(tempUpload);
 
       const user = await User.findByIdAndUpdate(
         userId,
