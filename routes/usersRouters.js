@@ -15,5 +15,5 @@ router.patch(
   upload.single("avatar"),
   userController.updateAvatars
 );
-
+router.post("/verify", userController.userVerify);
 module.exports = router;
