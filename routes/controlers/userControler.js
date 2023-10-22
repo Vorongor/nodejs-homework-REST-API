@@ -7,6 +7,10 @@ const path = require("path");
 const fs = require("fs/promises");
 const Jimp = require("jimp");
 const { validateUser } = require("../midleware/userValidate");
+const { nanoid } = require("nanoid");
+const { use } = require("../contactRoutes");
+const Joi = require("joi");
+const { sendVerificationEmail } = require("../midleware/sendEmail");
 
 const tempDir = path.join(__dirname, "../", "../", "temp");
 const avatarsDir = path.join(__dirname, "../", "../", "public", "avatars");
@@ -28,10 +32,12 @@ const registerUser = async (req, res, next) => {
     }
     const avatarURL = gravatar.url(email, { protocol: "https", s: "100" });
     const hashedPassword = await bcrypt.hash(password, 10);
+    const verificationToken = nanoid();
     const user = await User.create({
       email,
       password: hashedPassword,
       avatarURL,
+      verificationToken,
     });
     const token = generateToken(user);
 
@@ -41,6 +47,7 @@ const registerUser = async (req, res, next) => {
         email: user.email,
         subscription: "starter",
         avatarURL,
+        verificationToken,
       },
     });
   } catch (error) {
@@ -62,6 +69,12 @@ const loginUser = async (req, res, next) => {
 
     if (!user || !(await bcrypt.compare(password, user.password))) {
       throw HttpError(401, "Invalid credentials");
+    }
+
+    const validAccess = user.verify;
+
+    if (validAccess !== true) {
+      throw HttpError(403, "Your email not verify");
     }
 
     const token = generateToken(user);
@@ -111,6 +124,7 @@ const getCurrentUser = async (req, res, next) => {
         email: user.email,
         subscription: user.subscription,
         avatarURL: user.avatarURL,
+        verificationToken: user.verificationToken,
       },
     });
   } catch (error) {
@@ -193,6 +207,68 @@ const updateAvatars = async (req, res, next) => {
   }
 };
 
+const verifiyToken = async (req, res, next) => {
+  try {
+    const { verificationToken } = req.params;
+    const result = await User.findOneAndUpdate(
+      { verificationToken },
+      { $set: { verify: true, verificationToken: null } },
+      { new: true }
+    );
+
+    if (!result) {
+      throw HttpError(404, "Not Found!");
+    }
+    res.json({
+      status: "success",
+      code: 200,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const userVerify = async (req, res, next) => {
+  try {
+    const schema = Joi.object({
+      email: Joi.string().email().required(),
+    });
+
+    const { error } = schema.validate(req.body);
+
+    if (error) {
+      return res.status(400).json({ message: "Missing required field email" });
+    }
+
+    const email = req.body.email;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.verify === true) {
+      return res
+        .status(400)
+        .json({ message: "Verification has already been passed" });
+    }
+
+    const verificationToken = user.verificationToken;
+
+    const emailResponse = await sendVerificationEmail(email, verificationToken);
+
+    return res.status(200).json({
+      message: "Verification email sent",
+      emailSentTo: email,
+      emailContent: emailResponse,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   registerUser,
   loginUser,
@@ -200,4 +276,6 @@ module.exports = {
   getCurrentUser,
   updateSubscription,
   updateAvatars,
+  verifiyToken,
+  userVerify,
 };

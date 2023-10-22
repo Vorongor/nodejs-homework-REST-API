@@ -4,7 +4,7 @@ const cors = require("cors");
 
 const contactsRouter = require("./routes/contactRoutes");
 const usersRouter = require("./routes/usersRouters");
-
+const authRoutes = require("./routes/authRoutes");
 const app = express();
 
 const formatsLogger = app.get("env") === "development" ? "dev" : "short";
@@ -16,6 +16,7 @@ app.use(express.static("public"));
 
 app.use("/api/contacts", contactsRouter);
 app.use("/users", usersRouter);
+app.use("/auth/verify", authRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: "Not found" });
