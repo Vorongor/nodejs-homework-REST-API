@@ -5,14 +5,14 @@ function sendVerificationEmail(email, verificationToken) {
     host: "smtp.ethereal.email",
     port: 587,
     auth: {
-      user: "lulu.wiegand@ethereal.email",
-      pass: "53nDtHFA6QYPcJSh3K",
+      user: "kathlyn.hilll@ethereal.email",
+      pass: "amgyWdyR42uj5EtQEd",
     },
   });
   const verificationLink = `http://localhost:3000/auth/verify/${verificationToken}`;
 
   const mailOptions = {
-    from: "your_email@gmail.com",
+    from: "kathlyn.hilll@ethereal.email",
     to: email,
     subject: "Email Verification",
     text: `Click the following link to verify your email: ${verificationLink}`,
